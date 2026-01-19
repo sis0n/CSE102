@@ -290,8 +290,15 @@ function generateForest() {
     player.x = TILE_DISPLAY_SIZE * 2;
     player.y = TILE_DISPLAY_SIZE * 2;
 
-    // Spawn 10 Monsters
-    for (let i = 0; i < 10; i++) {
+    // Spawn Monsters (Wave 1)
+    let wave1Count = 10;
+    let wave1SpeedMult = difficultyMultiplier;
+    if (difficultyMultiplier > 1) {
+        wave1Count = 20;
+        wave1SpeedMult = 1;
+    }
+
+    for (let i = 0; i < wave1Count; i++) {
         let ex, ey;
         // Find a random spot not too close to the player
         do {
@@ -304,7 +311,7 @@ function generateForest() {
             y: ey,
             width: 50,           // Display size sa screen (pwedeng 30-50 depende sa gusto mo)
             height: 50,
-            speed: (1 + Math.random() * 1.5) * difficultyMultiplier,
+            speed: (1 + Math.random() * 1.5) * wave1SpeedMult,
             hp: 1,
             maxHp: 1,
             emoji: "👹",
@@ -501,7 +508,14 @@ function update() {
         // Wave Logic: Spawn Wave 2 if Wave 1 is cleared
         if (enemies.length === 0 && forestWave === 1) {
             forestWave = 2;
-            for (let i = 0; i < 5; i++) {
+            let wave2Count = 5;
+            let wave2SpeedMult = difficultyMultiplier;
+            if (difficultyMultiplier > 1) {
+                wave2Count = 10;
+                wave2SpeedMult = 1;
+            }
+
+            for (let i = 0; i < wave2Count; i++) {
                 let ex, ey;
                 do {
                     ex = Math.floor(Math.random() * (COLS - 2) + 1) * TILE_DISPLAY_SIZE;
@@ -513,7 +527,7 @@ function update() {
                     y: ey,
                     width: 50,       // Display size sa canvas
                     height: 50,
-                    speed: (1 + Math.random() * 1.5) * difficultyMultiplier,
+                    speed: (1 + Math.random() * 1.5) * wave2SpeedMult,
                     hp: 2,
                     maxHp: 2,
                     img: enemy2Img,  // Siguraduhin na ito ang edited-image.png
@@ -561,7 +575,7 @@ function update() {
                 enemy.facingRight = px > ex;
 
                 if (enemy.shootTimer <= 0) {
-                    enemy.shootTimer = 60;
+                    enemy.shootTimer = Math.floor(60 / difficultyMultiplier);
                     let ex = enemy.x + enemy.width / 2;
                     let ey = enemy.y + enemy.height / 2;
                     let px = player.x + player.width / 2;
@@ -987,6 +1001,11 @@ function render() {
     if (currentLevel === 1) drawFog();
 
     ctx.restore(); // End Shake
+
+    if (currentLevel === 2) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.01)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     for (let i = 0; i < player.lives; i++) {
         ctx.drawImage(heartImg, 10 + i * 35, 10, 30, 30);
