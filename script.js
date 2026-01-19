@@ -33,6 +33,7 @@ let gameState = "START";
 let playerName = "";
 let score = 0;
 let difficultyMultiplier = 1;
+let gameTime = 0;
 
 const player = {
     x: TILE_DISPLAY_SIZE * 1.1,
@@ -105,14 +106,17 @@ canvas.addEventListener("mousedown", (e) => {
         if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= 200 && mouseY <= 200 + btnH) {
             difficultyMultiplier = 0.6;
             gameState = "PLAYING";
+            gameTime = 0;
         }
         else if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= 300 && mouseY <= 300 + btnH) {
             difficultyMultiplier = 1;
             gameState = "PLAYING";
+            gameTime = 0;
         }
         else if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= 400 && mouseY <= 400 + btnH) {
             difficultyMultiplier = 2;
             gameState = "PLAYING";
+            gameTime = 0;
         }
     }
     if (gameState === "LEADERBOARD") {
@@ -309,6 +313,7 @@ function saveScore() {
 
 function update() {
     if (gameState !== "PLAYING") return;
+    gameTime++;
     if (player.lives <= 0) return;
     let nx = player.x,
         ny = player.y;
@@ -851,7 +856,7 @@ function render() {
 
     ctx.fillStyle = "white";
     ctx.font = "20px Arial";
-    ctx.fillText("Score: " + score, 10, 60);
+    ctx.fillText("Score: " + score + "   Time: " + Math.floor(gameTime / 60) + "s", 10, 60);
 
     if (gameWon) {
         ctx.fillStyle = "gold";
