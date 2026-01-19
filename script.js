@@ -24,6 +24,7 @@ const traps = [];
 const enemies = [];
 const projectiles = [];
 const enemyProjectiles = [];
+const particles = [];
 let solutionPathSet = new Set();
 let solutionPathArr = [];
 let currentLevel = 1;
@@ -34,6 +35,7 @@ let playerName = "";
 let score = 0;
 let difficultyMultiplier = 1;
 let gameTime = 0;
+let shakeIntensity = 0;
 
 const player = {
     x: TILE_DISPLAY_SIZE * 1.1,
@@ -58,6 +60,12 @@ const player = {
 
 const keys = {};
 window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        if (gameState === "PLAYING") gameState = "SETTINGS";
+        else if (gameState === "SETTINGS" || gameState === "SETTINGS_CONTROLS") gameState = "PLAYING";
+        return;
+    }
+
     if (gameState === "INPUT_NAME") {
         if (e.key === "Enter") {
             if (playerName.length > 0) gameState = "DIFFICULTY_SELECT";
@@ -130,6 +138,46 @@ canvas.addEventListener("mousedown", (e) => {
         if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH) {
             location.reload(); // Simple reload to restart
         }
+    }
+    if (gameState === "GAME_OVER") {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const btnX = canvas.width / 2 - 75;
+        const btnY = canvas.height / 2 + 60;
+        const btnW = 150;
+        const btnH = 50;
+        if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH) {
+            gameState = "LEADERBOARD";
+        }
+    }
+    if (gameState === "SETTINGS") {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+
+        // Controls (y - 60 to y - 20)
+        if (mouseX >= cx - 100 && mouseX <= cx + 100 && mouseY >= cy - 60 && mouseY <= cy - 20) {
+            gameState = "SETTINGS_CONTROLS";
+        }
+        // Restart (y to y + 40)
+        else if (mouseX >= cx - 100 && mouseX <= cx + 100 && mouseY >= cy && mouseY <= cy + 40) {
+            resetGame();
+        }
+        // Quit (y + 60 to y + 100)
+        else if (mouseX >= cx - 100 && mouseX <= cx + 100 && mouseY >= cy + 60 && mouseY <= cy + 100) {
+            location.reload();
+        }
+    }
+    if (gameState === "SETTINGS_CONTROLS") {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        if (mouseX >= cx - 100 && mouseX <= cx + 100 && mouseY >= cy + 100 && mouseY <= cy + 140) gameState = "SETTINGS";
     }
 });
 
@@ -224,6 +272,7 @@ function generateForest() {
     enemies.length = 0;
     projectiles.length = 0;
     enemyProjectiles.length = 0;
+    particles.length = 0;
     gameWon = false;
 
     for (let r = 0; r < ROWS; r++) {
@@ -304,6 +353,19 @@ function canMoveTo(nx, ny) {
     return true;
 }
 
+function createParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5,
+            life: 1.0,
+            color: color
+        });
+    }
+}
+
 function saveScore() {
     const highScores = JSON.parse(localStorage.getItem("leaderboard")) || [];
     highScores.push({ name: playerName, score: score });
@@ -311,9 +373,32 @@ function saveScore() {
     localStorage.setItem("leaderboard", JSON.stringify(highScores.slice(0, 5)));
 }
 
+function resetGame() {
+    score = 0;
+    gameTime = 0;
+    currentLevel = 1;
+    forestWave = 0;
+    gameWon = false;
+    player.lives = 3;
+    player.isInvincible = false;
+    player.invTimer = 0;
+    loadLevel(1);
+    gameState = "PLAYING";
+}
+
 function update() {
     if (gameState !== "PLAYING") return;
     gameTime++;
+    if (shakeIntensity > 0) shakeIntensity -= 1;
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.05;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+
     if (player.lives <= 0) return;
     let nx = player.x,
         ny = player.y;
@@ -347,11 +432,12 @@ function update() {
             trap.revealed = true;
             if (!player.isInvincible) {
                 player.lives--;
+                shakeIntensity = 10;
                 player.isInvincible = true;
                 player.invTimer = 60;
                 if (player.lives <= 0)
                     setTimeout(() => {
-                        saveScore(); gameState = "LEADERBOARD";
+                        saveScore(); gameState = "GAME_OVER";
                     }, 100);
             }
         }
@@ -391,7 +477,9 @@ function update() {
             let e = enemies[j];
             if (p.x > e.x && p.x < e.x + e.width && p.y > e.y && p.y < e.y + e.height) {
                 e.hp--;
+                createParticles(e.x + e.width / 2, e.y + e.height / 2, "red", 3);
                 if (e.hp <= 0) {
+                    createParticles(e.x + e.width / 2, e.y + e.height / 2, "orange", 10);
                     score += e.points;
                     if (e.isBoss) {
                         gameWon = true;
@@ -524,10 +612,11 @@ function update() {
             ) {
                 if (!player.isInvincible) {
                     player.lives--;
+                    shakeIntensity = 10;
                     player.isInvincible = true;
                     player.invTimer = 60;
                     if (player.lives <= 0) setTimeout(() => {
-                        saveScore(); gameState = "LEADERBOARD";
+                        saveScore(); gameState = "GAME_OVER";
                     }, 100);
                 }
             }
@@ -550,10 +639,11 @@ function update() {
             ) {
                 if (!player.isInvincible) {
                     player.lives--;
+                    shakeIntensity = 10;
                     player.isInvincible = true;
                     player.invTimer = 60;
                     if (player.lives <= 0) setTimeout(() => {
-                        saveScore(); gameState = "LEADERBOARD";
+                        saveScore(); gameState = "GAME_OVER";
                     }, 100);
                 }
                 enemyProjectiles.splice(i, 1);
@@ -689,6 +779,28 @@ function render() {
         return;
     }
 
+    if (gameState === "GAME_OVER") {
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "red";
+        ctx.font = "50px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20);
+        
+        ctx.fillStyle = "white";
+        ctx.font = "30px Arial";
+        ctx.fillText("Score: " + score, canvas.width / 2, canvas.height / 2 + 30);
+
+        const btnX = canvas.width / 2 - 75;
+        const btnY = canvas.height / 2 + 60;
+        ctx.fillStyle = "gray";
+        ctx.fillRect(btnX, btnY, 150, 50);
+        ctx.fillStyle = "white";
+        ctx.fillText("LEADERBOARD", canvas.width / 2, btnY + 35);
+        ctx.textAlign = "start";
+        return;
+    }
+
     if (gameState === "LEADERBOARD") {
         ctx.fillStyle = "black";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -715,6 +827,13 @@ function render() {
         ctx.fillText("RESTART", canvas.width / 2, btnY + 28);
         ctx.textAlign = "start";
         return;
+    }
+
+    ctx.save();
+    if (shakeIntensity > 0) {
+        let dx = (Math.random() - 0.5) * shakeIntensity;
+        let dy = (Math.random() - 0.5) * shakeIntensity;
+        ctx.translate(dx, dy);
     }
 
     for (let r = 0; r < ROWS; r++) {
@@ -798,11 +917,21 @@ function render() {
             ctx.fillText(enemy.emoji, enemy.x, enemy.y + 25);
         }
 
-        // HP Bar
-        ctx.fillStyle = "red";
-        ctx.fillRect(enemy.x, enemy.y + enemy.height + 5, enemy.width, 5);
-        ctx.fillStyle = "#0f0";
-        ctx.fillRect(enemy.x, enemy.y + enemy.height + 5, enemy.width * (enemy.hp / enemy.maxHp), 5);
+        if (enemy.isBoss) {
+            // Big Boss HP Bar at the top
+            ctx.fillStyle = "black";
+            ctx.fillRect(canvas.width / 2 - 152, 18, 304, 24);
+            ctx.fillStyle = "red";
+            ctx.fillRect(canvas.width / 2 - 150, 20, 300, 20);
+            ctx.fillStyle = "#0f0";
+            ctx.fillRect(canvas.width / 2 - 150, 20, 300 * (enemy.hp / enemy.maxHp), 20);
+        } else {
+            // Small HP Bar
+            ctx.fillStyle = "red";
+            ctx.fillRect(enemy.x, enemy.y + enemy.height + 5, enemy.width, 5);
+            ctx.fillStyle = "#0f0";
+            ctx.fillRect(enemy.x, enemy.y + enemy.height + 5, enemy.width * (enemy.hp / enemy.maxHp), 5);
+        }
     });
 
     // Draw Projectiles (Emoji)
@@ -813,6 +942,13 @@ function render() {
     enemyProjectiles.forEach((p) => {
         ctx.fillText("🔥", p.x - 10, p.y + 10);
     });
+
+    particles.forEach((p) => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 4, 4);
+    });
+    ctx.globalAlpha = 1.0;
 
     if (!player.isInvincible || Math.floor(Date.now() / 100) % 2) {
         // Ang player sprite ay nakaharap sa KANAN by default.
@@ -850,6 +986,8 @@ function render() {
 
     if (currentLevel === 1) drawFog();
 
+    ctx.restore(); // End Shake
+
     for (let i = 0; i < player.lives; i++) {
         ctx.drawImage(heartImg, 10 + i * 35, 10, 30, 30);
     }
@@ -863,6 +1001,56 @@ function render() {
         ctx.font = "60px Arial";
         ctx.textAlign = "center";
         ctx.fillText("YOU WIN", canvas.width / 2, canvas.height / 2);
+        ctx.textAlign = "start";
+    }
+
+    if (gameState === "SETTINGS") {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "white";
+        ctx.font = "40px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2 - 100);
+
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const btnW = 200;
+        const btnH = 40;
+
+        ctx.fillStyle = "gray";
+        ctx.fillRect(cx - btnW / 2, cy - 60, btnW, btnH);
+        ctx.fillStyle = "white";
+        ctx.font = "24px Arial";
+        ctx.fillText("CONTROLS", cx, cy - 32);
+
+        ctx.fillStyle = "orange";
+        ctx.fillRect(cx - btnW / 2, cy, btnW, btnH);
+        ctx.fillStyle = "white";
+        ctx.fillText("RESTART", cx, cy + 28);
+
+        ctx.fillStyle = "red";
+        ctx.fillRect(cx - btnW / 2, cy + 60, btnW, btnH);
+        ctx.fillStyle = "white";
+        ctx.fillText("QUIT", cx, cy + 88);
+        ctx.textAlign = "start";
+    }
+
+    if (gameState === "SETTINGS_CONTROLS") {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = "40px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("CONTROLS", canvas.width / 2, canvas.height / 2 - 100);
+        ctx.font = "24px Arial";
+        ctx.fillText("WASD / Arrows : Move", canvas.width / 2, canvas.height / 2 - 40);
+        ctx.fillText("Space : Shoot", canvas.width / 2, canvas.height / 2);
+        ctx.fillText("Esc : Pause", canvas.width / 2, canvas.height / 2 + 40);
+        ctx.fillStyle = "gray";
+        ctx.fillRect(canvas.width / 2 - 100, canvas.height / 2 + 100, 200, 40);
+        ctx.fillStyle = "white";
+        ctx.fillText("BACK", canvas.width / 2, canvas.height / 2 + 128);
         ctx.textAlign = "start";
     }
 }
