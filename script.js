@@ -29,6 +29,7 @@ let gameWon = false;
 let gameState = "START";
 let playerName = "";
 let score = 0;
+let difficultyMultiplier = 1;
 
 const player = {
   x: TILE_DISPLAY_SIZE * 1.1,
@@ -54,7 +55,7 @@ const keys = {};
 window.addEventListener("keydown", (e) => {
   if (gameState === "INPUT_NAME") {
     if (e.key === "Enter") {
-      if (playerName.length > 0) gameState = "PLAYING";
+      if (playerName.length > 0) gameState = "DIFFICULTY_SELECT";
     } else if (e.key === "Backspace") {
       playerName = playerName.slice(0, -1);
     } else if (e.key.length === 1) {
@@ -87,6 +88,27 @@ canvas.addEventListener("mousedown", (e) => {
     const btnH = 50;
     if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH) {
       gameState = "INPUT_NAME";
+    }
+  }
+  if (gameState === "DIFFICULTY_SELECT") {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const btnW = 200;
+    const btnH = 50;
+    const btnX = canvas.width / 2 - btnW / 2;
+
+    if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= 200 && mouseY <= 200 + btnH) {
+      difficultyMultiplier = 0.6;
+      gameState = "PLAYING";
+    }
+    else if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= 300 && mouseY <= 300 + btnH) {
+      difficultyMultiplier = 1;
+      gameState = "PLAYING";
+    }
+    else if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= 400 && mouseY <= 400 + btnH) {
+      difficultyMultiplier = 2;
+      gameState = "PLAYING";
     }
   }
   if (gameState === "LEADERBOARD") {
@@ -225,11 +247,11 @@ function generateForest() {
       y: ey,
       width: 30,
       height: 30,
-      speed: 1 + Math.random() * 1.5, // Random speed between 1 and 2.5
+      speed: (1 + Math.random() * 1.5) * difficultyMultiplier,
       hp: 1,
       maxHp: 1,
       emoji: "👹",
-      points: 5,
+      points: difficultyMultiplier < 1 ? 2.5 : difficultyMultiplier > 1 ? 10 : 5,
     });
   }
 }
@@ -384,11 +406,11 @@ function update() {
           y: ey,
           width: 30,
           height: 30,
-          speed: 1 + Math.random() * 1.5,
+          speed: (1 + Math.random() * 1.5) * difficultyMultiplier,
           hp: 2,
           maxHp: 2,
           emoji: "👾",
-          points: 10,
+          points: difficultyMultiplier < 1 ? 5 : difficultyMultiplier > 1 ? 20 : 10,
         });
       }
     } else if (enemies.length === 0 && forestWave === 2) {
@@ -402,7 +424,7 @@ function update() {
         maxHp: 20,
         emoji: "🐉",
         isBoss: true,
-        points: 30,
+        points: difficultyMultiplier < 1 ? 15 : difficultyMultiplier > 1 ? 60 : 30,
         shootTimer: 0,
       });
     }
@@ -417,7 +439,7 @@ function update() {
           let px = player.x + player.width / 2;
           let py = player.y + player.height / 2;
           let angle = Math.atan2(py - ey, px - ex);
-          let speed = 4;
+          let speed = 4 * difficultyMultiplier;
           enemyProjectiles.push({
             x: ex,
             y: ey,
@@ -567,6 +589,42 @@ function render() {
     ctx.fillText("Enter your name:", canvas.width / 2, canvas.height / 2 - 50);
     ctx.fillStyle = "yellow";
     ctx.fillText(playerName + "_", canvas.width / 2, canvas.height / 2);
+    ctx.textAlign = "start";
+    return;
+  }
+
+  if (gameState === "DIFFICULTY_SELECT") {
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "white";
+    ctx.font = "40px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("SELECT DIFFICULTY", canvas.width / 2, 100);
+
+    const btnW = 200;
+    const btnH = 50;
+    const btnX = canvas.width / 2 - btnW / 2;
+
+    ctx.font = "30px Arial";
+
+    // Easy
+    ctx.fillStyle = "green";
+    ctx.fillRect(btnX, 200, btnW, btnH);
+    ctx.fillStyle = "white";
+    ctx.fillText("EASY", canvas.width / 2, 200 + 35);
+
+    // Medium
+    ctx.fillStyle = "orange";
+    ctx.fillRect(btnX, 300, btnW, btnH);
+    ctx.fillStyle = "white";
+    ctx.fillText("MEDIUM", canvas.width / 2, 300 + 35);
+
+    // Hard
+    ctx.fillStyle = "red";
+    ctx.fillRect(btnX, 400, btnW, btnH);
+    ctx.fillStyle = "white";
+    ctx.fillText("HARD", canvas.width / 2, 400 + 35);
+
     ctx.textAlign = "start";
     return;
   }
