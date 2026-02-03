@@ -18,6 +18,7 @@ const enemy1Img = new Image();
 const enemy2Img = new Image();
 const bossImg = new Image();
 
+// --- GLOBAL VARIABLES ---
 const bgLayer = [];
 const wallLayer = [];
 const traps = [];
@@ -25,6 +26,9 @@ const enemies = [];
 const projectiles = [];
 const enemyProjectiles = [];
 const particles = [];
+const floatingTexts = []; // NEW: For damage numbers
+const items = [];         // NEW: For health drops
+
 let solutionPathSet = new Set();
 let solutionPathArr = [];
 let currentLevel = 1;
@@ -37,6 +41,7 @@ let difficultyMultiplier = 1;
 let gameTime = 0;
 let shakeIntensity = 0;
 
+// --- PLAYER ---
 const player = {
     x: TILE_DISPLAY_SIZE * 1.1,
     y: TILE_DISPLAY_SIZE * 1.1,
@@ -48,7 +53,8 @@ const player = {
     frameCount: 4,
     frameTimer: 0,
     frameSpeed: 8,
-    speed: 5.5,
+    speed: 5.5,          // Base speed
+    dashSpeed: 12,       // NEW: Speed when dashing
     isMoving: false,
     lives: 3,
     isInvincible: false,
@@ -56,9 +62,15 @@ const player = {
     lastDir: { x: 1, y: 0 },
     facingRight: true,
     shootTimer: 0,
+    // NEW: Dash Properties
+    isDashing: false,
+    dashTimer: 0,
+    dashCooldown: 0
 };
 
 const keys = {};
+
+// --- INPUT HANDLING ---
 window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         if (gameState === "PLAYING") gameState = "SETTINGS";
@@ -78,9 +90,18 @@ window.addEventListener("keydown", (e) => {
     }
     if (gameState !== "PLAYING") return;
 
+    // NEW: Dash Logic (Shift Key)
+    if (e.key === "Shift" && player.dashCooldown <= 0 && !player.isDashing) {
+        player.isDashing = true;
+        player.dashTimer = 10; // Dash lasts 10 frames
+        player.dashCooldown = 60; // 1 second cooldown
+        createParticles(player.x + player.width / 2, player.y + player.height / 2, "cyan", 8);
+    }
+
     keys[e.key.toLowerCase()] = true;
     player.isMoving = true;
 });
+
 window.addEventListener("keyup", (e) => {
     if (gameState !== "PLAYING") return;
     keys[e.key.toLowerCase()] = false;
@@ -91,6 +112,7 @@ window.addEventListener("keyup", (e) => {
 });
 
 canvas.addEventListener("mousedown", (e) => {
+    // ... (Existing Mouse Logic kept exactly the same) ...
     if (gameState === "START") {
         const rect = canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
@@ -136,7 +158,7 @@ canvas.addEventListener("mousedown", (e) => {
         const btnW = 120;
         const btnH = 40;
         if (mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH) {
-            location.reload(); // Simple reload to restart
+            location.reload(); 
         }
     }
     if (gameState === "GAME_OVER") {
@@ -158,15 +180,12 @@ canvas.addEventListener("mousedown", (e) => {
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
 
-        // Controls (y - 60 to y - 20)
         if (mouseX >= cx - 100 && mouseX <= cx + 100 && mouseY >= cy - 60 && mouseY <= cy - 20) {
             gameState = "SETTINGS_CONTROLS";
         }
-        // Restart (y to y + 40)
         else if (mouseX >= cx - 100 && mouseX <= cx + 100 && mouseY >= cy && mouseY <= cy + 40) {
             resetGame();
         }
-        // Quit (y + 60 to y + 100)
         else if (mouseX >= cx - 100 && mouseX <= cx + 100 && mouseY >= cy + 60 && mouseY <= cy + 100) {
             location.reload();
         }
@@ -181,12 +200,28 @@ canvas.addEventListener("mousedown", (e) => {
     }
 });
 
+// --- HELPER FUNCTIONS ---
+
+// NEW: Function to show floating damage numbers
+function showDamage(x, y, text, color = "white") {
+    floatingTexts.push({
+        x: x,
+        y: y,
+        text: text,
+        life: 1.0,
+        color: color,
+        vy: -2
+    });
+}
+
 function generateMaze() {
     solutionPathSet.clear();
     solutionPathArr = [];
     traps.length = 0;
     enemies.length = 0;
     projectiles.length = 0;
+    items.length = 0;           // Clear items
+    floatingTexts.length = 0;   // Clear text
     forestWave = 1;
 
     for (let r = 0; r < ROWS; r++) {
@@ -228,7 +263,6 @@ function generateMaze() {
         }
     }
 
-    // BFS PATHFINDING para sa "Solution Path"
     let startNode = { r: 1, c: 1, path: [{ r: 1, c: 1 }] };
     let queue = [startNode];
     let visited = new Set(["1,1"]);
@@ -262,7 +296,6 @@ function generateMaze() {
     }
     solutionPathArr.forEach((p) => solutionPathSet.add(`${p.r},${p.c}`));
     wallLayer[ROWS - 2][COLS - 2] = 10;
-
 }
 
 function generateForest() {
@@ -273,6 +306,8 @@ function generateForest() {
     projectiles.length = 0;
     enemyProjectiles.length = 0;
     particles.length = 0;
+    items.length = 0;           // Clear items
+    floatingTexts.length = 0;   // Clear text
     gameWon = false;
 
     for (let r = 0; r < ROWS; r++) {
@@ -281,7 +316,7 @@ function generateForest() {
         for (let c = 0; c < COLS; c++) {
             bgLayer[r][c] = 0;
             if (r === 0 || r === ROWS - 1 || c === 0 || c === COLS - 1) {
-                wallLayer[r][c] = 5; // Tree tile (Index 5 from map0.png)
+                wallLayer[r][c] = 5; 
             } else {
                 wallLayer[r][c] = -1;
             }
@@ -290,7 +325,6 @@ function generateForest() {
     player.x = TILE_DISPLAY_SIZE * 2;
     player.y = TILE_DISPLAY_SIZE * 2;
 
-    // Spawn Monsters (Wave 1)
     let wave1Count = 10;
     let wave1SpeedMult = difficultyMultiplier;
     if (difficultyMultiplier > 1) {
@@ -300,7 +334,6 @@ function generateForest() {
 
     for (let i = 0; i < wave1Count; i++) {
         let ex, ey;
-        // Find a random spot not too close to the player
         do {
             ex = Math.floor(Math.random() * (COLS - 2) + 1) * TILE_DISPLAY_SIZE;
             ey = Math.floor(Math.random() * (ROWS - 2) + 1) * TILE_DISPLAY_SIZE;
@@ -309,7 +342,7 @@ function generateForest() {
         enemies.push({
             x: ex,
             y: ey,
-            width: 50,           // Display size sa screen (pwedeng 30-50 depende sa gusto mo)
+            width: 50,
             height: 50,
             speed: (1 + Math.random() * 1.5) * wave1SpeedMult,
             hp: 1,
@@ -317,13 +350,13 @@ function generateForest() {
             emoji: "👹",
             img: enemy1Img,
             points: difficultyMultiplier < 1 ? 2.5 : difficultyMultiplier > 1 ? 10 : 5,
-            srcW: 66,            // 320 / 4 columns = 80
-            srcH: 60,            // 240 / 3 rows = 80
-            frameX: 2,           // Magsisimula sa Column 2 (pangatlong frame sa taas)
-            frameY: 0,           // Row 0 (Pinakataas na row)
-            frameCount: 2,       // 2 frames lang ang gagamitin para sa lakad
+            srcW: 66,
+            srcH: 60,
+            frameX: 2,
+            frameY: 0,
+            frameCount: 2,
             frameTimer: 0,
-            frameSpeed: 15,      // Bagalan natin ng konti para hindi masyadong mabilis ang animation
+            frameSpeed: 15,
         });
     }
 }
@@ -339,7 +372,6 @@ function loadLevel(level) {
 }
 
 function canMoveTo(nx, ny) {
-    // return true;
     let p = 6;
     let corners = [
         { x: nx + p, y: ny + p },
@@ -389,21 +421,56 @@ function resetGame() {
     player.lives = 3;
     player.isInvincible = false;
     player.invTimer = 0;
+    player.dashCooldown = 0; // Reset Dash
     loadLevel(1);
     gameState = "PLAYING";
 }
 
+// --- UPDATE LOOP ---
 function update() {
     if (gameState !== "PLAYING") return;
     gameTime++;
     if (shakeIntensity > 0) shakeIntensity -= 1;
 
+    // Update Particles
     for (let i = particles.length - 1; i >= 0; i--) {
         let p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
         p.life -= 0.05;
         if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // NEW: Update Floating Text
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        let ft = floatingTexts[i];
+        ft.y += ft.vy;
+        ft.life -= 0.03;
+        if (ft.life <= 0) floatingTexts.splice(i, 1);
+    }
+
+    // NEW: Update Items (Collection)
+    for (let i = items.length - 1; i >= 0; i--) {
+        let item = items[i];
+        // Collision with player
+        if (player.x < item.x + item.width &&
+            player.x + player.width > item.x &&
+            player.y < item.y + item.height &&
+            player.y + player.height > item.y) {
+            
+            if (item.type === "health") {
+                if (player.lives < 3) {
+                    player.lives++;
+                    showDamage(player.x, player.y - 20, "+1 HP", "#0f0");
+                    items.splice(i, 1);
+                } else {
+                    // Score bonus if full health
+                    score += 5;
+                    showDamage(player.x, player.y - 20, "+5 PTS", "yellow");
+                    items.splice(i, 1);
+                }
+            }
+        }
     }
 
     if (player.lives <= 0) return;
@@ -423,10 +490,24 @@ function update() {
         if (dx === 1) player.facingRight = true;
     }
 
-    if (dy === -1) ny -= player.speed;
-    if (dy === 1) ny += player.speed;
-    if (dx === -1) nx -= player.speed;
-    if (dx === 1) nx += player.speed;
+    // NEW: Dash Logic Implementation
+    let currentSpeed = player.speed;
+    if (player.isDashing) {
+        currentSpeed = player.dashSpeed; // Boost speed
+        player.dashTimer--;
+        // Create dash trail particles
+        if (player.dashTimer % 3 === 0) {
+             createParticles(player.x + player.width/2, player.y + player.height/2, "cyan", 1);
+        }
+        if (player.dashTimer <= 0) player.isDashing = false;
+    }
+    if (player.dashCooldown > 0) player.dashCooldown--;
+
+    // Apply speed
+    if (dy === -1) ny -= currentSpeed;
+    if (dy === 1) ny += currentSpeed;
+    if (dx === -1) nx -= currentSpeed;
+    if (dx === 1) nx += currentSpeed;
 
     if (canMoveTo(nx, player.y)) player.x = nx;
     if (canMoveTo(player.x, ny)) player.y = ny;
@@ -437,11 +518,12 @@ function update() {
     traps.forEach((trap) => {
         if (trap.r === pRow && trap.c === pCol) {
             trap.revealed = true;
-            if (!player.isInvincible) {
+            if (!player.isInvincible && !player.isDashing) { // Invincible during dash? Optional.
                 player.lives--;
                 shakeIntensity = 10;
                 player.isInvincible = true;
                 player.invTimer = 60;
+                showDamage(player.x, player.y, "-1 HP", "red");
                 if (player.lives <= 0)
                     setTimeout(() => {
                         saveScore(); gameState = "GAME_OVER";
@@ -453,7 +535,7 @@ function update() {
     // Shooting Logic
     if (player.shootTimer > 0) player.shootTimer--;
     if (keys[" "] && player.shootTimer <= 0) {
-        player.shootTimer = 20; // Cooldown
+        player.shootTimer = 20; 
         projectiles.push({
             x: player.x + player.width / 2,
             y: player.y + player.height / 2,
@@ -468,7 +550,6 @@ function update() {
         p.x += p.vx;
         p.y += p.vy;
 
-        // Check Wall Collision / Out of Bounds
         let pCol = Math.floor(p.x / TILE_DISPLAY_SIZE);
         let pRow = Math.floor(p.y / TILE_DISPLAY_SIZE);
         if (
@@ -485,9 +566,23 @@ function update() {
             if (p.x > e.x && p.x < e.x + e.width && p.y > e.y && p.y < e.y + e.height) {
                 e.hp--;
                 createParticles(e.x + e.width / 2, e.y + e.height / 2, "red", 3);
+                showDamage(e.x + e.width / 2, e.y, "1", "white"); // Show Damage
+
                 if (e.hp <= 0) {
                     createParticles(e.x + e.width / 2, e.y + e.height / 2, "orange", 10);
                     score += e.points;
+                    
+                    // NEW: Chance to drop heart
+                    if (Math.random() < 0.20) {
+                        items.push({
+                            x: e.x + 10,
+                            y: e.y + 10,
+                            width: 20,
+                            height: 20,
+                            type: "health"
+                        });
+                    }
+
                     if (e.isBoss) {
                         gameWon = true;
                         setTimeout(() => {
@@ -495,9 +590,9 @@ function update() {
                             gameState = "LEADERBOARD";
                         }, 3000);
                     }
-                    enemies.splice(j, 1); // Kill enemy
+                    enemies.splice(j, 1);
                 }
-                projectiles.splice(i, 1); // Remove fireball
+                projectiles.splice(i, 1); 
                 break;
             }
         }
@@ -505,7 +600,6 @@ function update() {
 
     // Enemy Logic (Level 2)
     if (currentLevel === 2) {
-        // Wave Logic: Spawn Wave 2 if Wave 1 is cleared
         if (enemies.length === 0 && forestWave === 1) {
             forestWave = 2;
             let wave2Count = 5;
@@ -525,20 +619,20 @@ function update() {
                 enemies.push({
                     x: ex,
                     y: ey,
-                    width: 50,       // Display size sa canvas
+                    width: 50,
                     height: 50,
                     speed: (1 + Math.random() * 1.5) * wave2SpeedMult,
                     hp: 2,
                     maxHp: 2,
-                    img: enemy2Img,  // Siguraduhin na ito ang edited-image.png
+                    img: enemy2Img,
                     points: difficultyMultiplier < 1 ? 5 : difficultyMultiplier > 1 ? 20 : 10,
-                    srcW: 80,        // Grid width (320px / 4 columns)
-                    srcH: 80,        // Grid height (240px / 3 rows)
-                    frameX: 2,       // Column 3 (Index 2)
-                    frameY: 1,       // Magsisimula sa Row 2 (Index 1)
-                    frameCount: 2,   // 2 frames (pababa)
+                    srcW: 80,
+                    srcH: 80,
+                    frameX: 2,
+                    frameY: 1,
+                    frameCount: 2,
                     frameTimer: 0,
-                    frameSpeed: 12,  // Bilis ng pag-galaw
+                    frameSpeed: 12,
                 });
             }
         } else if (enemies.length === 0 && forestWave === 2) {
@@ -552,11 +646,11 @@ function update() {
                 maxHp: 20,
                 emoji: "🐉",
                 img: bossImg,
-                srcW: 65,        // Hula: 96x96 frame size (i-adjust kung iba ang size ng bigmonster1)
+                srcW: 65,
                 srcH: 80,
-                frameX: 1.5,       // Simula sa unang column
-                frameY: 1.9,       // Row 1 (Walking/Idle)
-                frameCount: 2,   // 3 frames animation
+                frameX: 1.5,
+                frameY: 1.9,
+                frameCount: 2,
                 frameTimer: 0,
                 frameSpeed: 20,
                 isBoss: true,
@@ -568,8 +662,6 @@ function update() {
         enemies.forEach((enemy) => {
             if (enemy.isBoss) {
                 enemy.shootTimer--;
-
-                // Boss facing logic
                 let px = player.x + player.width / 2;
                 let ex = enemy.x + enemy.width / 2;
                 enemy.facingRight = px > ex;
@@ -590,7 +682,6 @@ function update() {
                     });
                 }
             } else {
-                // Move towards player
                 if (enemy.x < player.x) {
                     enemy.x += enemy.speed;
                     enemy.facingRight = true;
@@ -603,13 +694,10 @@ function update() {
                 if (enemy.y > player.y) enemy.y -= enemy.speed;
             }
 
-            // Enemy Animation
             if (enemy.img) {
                 enemy.frameTimer++;
                 if (enemy.frameTimer >= enemy.frameSpeed) {
-                    // Generic Animation Logic
                     if (enemy.baseFrameX === undefined) enemy.baseFrameX = enemy.frameX;
-
                     let currentOffset = enemy.frameX - enemy.baseFrameX;
                     let nextOffset = (currentOffset + 1) % enemy.frameCount;
                     enemy.frameX = enemy.baseFrameX + nextOffset;
@@ -617,18 +705,18 @@ function update() {
                 }
             }
 
-            // Collision with Player
             if (
                 player.x < enemy.x + 30 &&
                 player.x + player.width > enemy.x &&
                 player.y < enemy.y + 30 &&
                 player.y + player.height > enemy.y
             ) {
-                if (!player.isInvincible) {
+                if (!player.isInvincible && !player.isDashing) {
                     player.lives--;
                     shakeIntensity = 10;
                     player.isInvincible = true;
                     player.invTimer = 60;
+                    showDamage(player.x, player.y, "-1 HP", "red");
                     if (player.lives <= 0) setTimeout(() => {
                         saveScore(); gameState = "GAME_OVER";
                     }, 100);
@@ -636,7 +724,6 @@ function update() {
             }
         });
 
-        // Enemy Projectiles
         for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
             let ep = enemyProjectiles[i];
             ep.x += ep.vx;
@@ -651,11 +738,12 @@ function update() {
                 ep.x > player.x && ep.x < player.x + player.width &&
                 ep.y > player.y && ep.y < player.y + player.height
             ) {
-                if (!player.isInvincible) {
+                if (!player.isInvincible && !player.isDashing) {
                     player.lives--;
                     shakeIntensity = 10;
                     player.isInvincible = true;
                     player.invTimer = 60;
+                    showDamage(player.x, player.y, "-1 HP", "red");
                     if (player.lives <= 0) setTimeout(() => {
                         saveScore(); gameState = "GAME_OVER";
                     }, 100);
@@ -683,6 +771,9 @@ function update() {
     }
 }
 
+// --- RENDER FUNCTIONS ---
+
+// NEW: Flickering Fog Logic
 function drawFog() {
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = canvas.width;
@@ -693,7 +784,10 @@ function drawFog() {
 
     const centerX = player.x + player.width / 2;
     const centerY = player.y + player.height / 2;
-    const radius = 120;
+    
+    // Flicker calculation
+    const flicker = (Math.random() * 10) - 5; 
+    const radius = 120 + flicker;
 
     const gradient = tCtx.createRadialGradient(
         centerX,
@@ -724,16 +818,8 @@ function render() {
         ctx.fillStyle = "white";
         ctx.font = "30px Arial";
         ctx.textAlign = "center";
-        ctx.fillText(
-            "Welcome, would you like to help the bear",
-            canvas.width / 2,
-            canvas.height / 2 - 50
-        );
-        ctx.fillText(
-            "get revenge on the dragon?",
-            canvas.width / 2,
-            canvas.height / 2
-        );
+        ctx.fillText("Welcome, would you like to help the bear", canvas.width / 2, canvas.height / 2 - 50);
+        ctx.fillText("get revenge on the dragon?", canvas.width / 2, canvas.height / 2);
         const btnX = canvas.width / 2 - 50;
         const btnY = canvas.height / 2 + 50;
         ctx.fillStyle = "green";
@@ -764,31 +850,22 @@ function render() {
         ctx.font = "40px Arial";
         ctx.textAlign = "center";
         ctx.fillText("SELECT DIFFICULTY", canvas.width / 2, 100);
-
         const btnW = 200;
         const btnH = 50;
         const btnX = canvas.width / 2 - btnW / 2;
-
         ctx.font = "30px Arial";
-
-        // Easy
         ctx.fillStyle = "green";
         ctx.fillRect(btnX, 200, btnW, btnH);
         ctx.fillStyle = "white";
         ctx.fillText("EASY", canvas.width / 2, 200 + 35);
-
-        // Medium
         ctx.fillStyle = "orange";
         ctx.fillRect(btnX, 300, btnW, btnH);
         ctx.fillStyle = "white";
         ctx.fillText("MEDIUM", canvas.width / 2, 300 + 35);
-
-        // Hard
         ctx.fillStyle = "red";
         ctx.fillRect(btnX, 400, btnW, btnH);
         ctx.fillStyle = "white";
         ctx.fillText("HARD", canvas.width / 2, 400 + 35);
-
         ctx.textAlign = "start";
         return;
     }
@@ -800,11 +877,9 @@ function render() {
         ctx.font = "50px Arial";
         ctx.textAlign = "center";
         ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20);
-        
         ctx.fillStyle = "white";
         ctx.font = "30px Arial";
         ctx.fillText("Score: " + score, canvas.width / 2, canvas.height / 2 + 30);
-
         const btnX = canvas.width / 2 - 75;
         const btnY = canvas.height / 2 + 60;
         ctx.fillStyle = "gray";
@@ -822,7 +897,6 @@ function render() {
         ctx.font = "40px Arial";
         ctx.textAlign = "center";
         ctx.fillText("LEADERBOARD", canvas.width / 2, 80);
-
         const highScores = JSON.parse(localStorage.getItem("leaderboard")) || [];
         ctx.font = "24px Arial";
         highScores.forEach((entry, index) => {
@@ -832,7 +906,6 @@ function render() {
                 140 + index * 40
             );
         });
-
         const btnX = canvas.width / 2 - 60;
         const btnY = canvas.height - 80;
         ctx.fillStyle = "green";
@@ -889,39 +962,23 @@ function render() {
             );
     });
 
-    // Draw Enemies (Emoji)
+    // NEW: Draw Items (Health Drops)
+    items.forEach(item => {
+        if (item.type === "health") {
+            ctx.drawImage(heartImg, item.x, item.y, item.width, item.height);
+        }
+    });
+
     enemies.forEach((enemy) => {
         if (enemy.img) {
-            // Ang monster2.png ay nakaharap sa KALIWA by default.
-            // Kaya kung facingRight siya, kailangan natin i-flip.
             if (enemy.facingRight) {
                 ctx.save();
                 ctx.translate(enemy.x + enemy.width, enemy.y);
                 ctx.scale(-1, 1);
-                ctx.drawImage(
-                    enemy.img,
-                    enemy.frameX * enemy.srcW,
-                    enemy.frameY * enemy.srcH,
-                    enemy.srcW,
-                    enemy.srcH,
-                    0,
-                    0,
-                    enemy.width,
-                    enemy.height
-                );
+                ctx.drawImage(enemy.img, enemy.frameX * enemy.srcW, enemy.frameY * enemy.srcH, enemy.srcW, enemy.srcH, 0, 0, enemy.width, enemy.height);
                 ctx.restore();
             } else {
-                ctx.drawImage(
-                    enemy.img,
-                    enemy.frameX * enemy.srcW,
-                    enemy.frameY * enemy.srcH,
-                    enemy.srcW,
-                    enemy.srcH,
-                    enemy.x,
-                    enemy.y,
-                    enemy.width,
-                    enemy.height
-                );
+                ctx.drawImage(enemy.img, enemy.frameX * enemy.srcW, enemy.frameY * enemy.srcH, enemy.srcW, enemy.srcH, enemy.x, enemy.y, enemy.width, enemy.height);
             }
         } else if (enemy.isBoss) {
             ctx.font = "60px Arial";
@@ -932,7 +989,6 @@ function render() {
         }
 
         if (enemy.isBoss) {
-            // Big Boss HP Bar at the top
             ctx.fillStyle = "black";
             ctx.fillRect(canvas.width / 2 - 152, 18, 304, 24);
             ctx.fillStyle = "red";
@@ -940,7 +996,6 @@ function render() {
             ctx.fillStyle = "#0f0";
             ctx.fillRect(canvas.width / 2 - 150, 20, 300 * (enemy.hp / enemy.maxHp), 20);
         } else {
-            // Small HP Bar
             ctx.fillStyle = "red";
             ctx.fillRect(enemy.x, enemy.y + enemy.height + 5, enemy.width, 5);
             ctx.fillStyle = "#0f0";
@@ -948,7 +1003,6 @@ function render() {
         }
     });
 
-    // Draw Projectiles (Emoji)
     ctx.font = "20px Arial";
     projectiles.forEach((p) => {
         ctx.fillText("🔥", p.x - 10, p.y + 10);
@@ -965,40 +1019,40 @@ function render() {
     ctx.globalAlpha = 1.0;
 
     if (!player.isInvincible || Math.floor(Date.now() / 100) % 2) {
-        // Ang player sprite ay nakaharap sa KANAN by default.
-        // Kung lastDir.x ay -1 (Kaliwa), i-flip natin.
         if (!player.facingRight) {
             ctx.save();
             ctx.translate(player.x + player.width, player.y);
             ctx.scale(-1, 1);
-            ctx.drawImage(
-                playerImg,
-                player.frameX * player.srcW,
-                0,
-                player.srcW,
-                player.srcH,
-                0,
-                0,
-                player.width,
-                player.height
-            );
+            ctx.drawImage(playerImg, player.frameX * player.srcW, 0, player.srcW, player.srcH, 0, 0, player.width, player.height);
             ctx.restore();
         } else {
-            ctx.drawImage(
-                playerImg,
-                player.frameX * player.srcW,
-                0,
-                player.srcW,
-                player.srcH,
-                player.x,
-                player.y,
-                player.width,
-                player.height
-            );
+            ctx.drawImage(playerImg, player.frameX * player.srcW, 0, player.srcW, player.srcH, player.x, player.y, player.width, player.height);
         }
     }
 
+    // NEW: Dash Cooldown Bar (under player)
+    if (player.dashCooldown > 0) {
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(player.x, player.y + player.height + 5, player.width, 4);
+        ctx.fillStyle = "cyan";
+        // Calculate remaining cooldown ratio (max cooldown is 60)
+        let cdRatio = 1 - (player.dashCooldown / 60); 
+        ctx.fillRect(player.x, player.y + player.height + 5, player.width * cdRatio, 4);
+    }
+
     if (currentLevel === 1) drawFog();
+    
+    // NEW: Draw Floating Text (Over everything except UI)
+    ctx.save();
+    ctx.font = "bold 20px Arial";
+    floatingTexts.forEach(ft => {
+        ctx.globalAlpha = Math.max(0, ft.life);
+        ctx.fillStyle = "black";
+        ctx.fillText(ft.text, ft.x + 2, ft.y + 2);
+        ctx.fillStyle = ft.color;
+        ctx.fillText(ft.text, ft.x, ft.y);
+    });
+    ctx.restore();
 
     ctx.restore(); // End Shake
 
@@ -1014,6 +1068,8 @@ function render() {
     ctx.fillStyle = "white";
     ctx.font = "20px Arial";
     ctx.fillText("Score: " + score + "   Time: " + Math.floor(gameTime / 60) + "s", 10, 60);
+    ctx.font = "14px Arial";
+    ctx.fillText("[SHIFT] to Dash", 10, 80);
 
     if (gameWon) {
         ctx.fillStyle = "gold";
@@ -1026,28 +1082,23 @@ function render() {
     if (gameState === "SETTINGS") {
         ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-
         ctx.fillStyle = "white";
         ctx.font = "40px Arial";
         ctx.textAlign = "center";
         ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2 - 100);
-
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
         const btnW = 200;
         const btnH = 40;
-
         ctx.fillStyle = "gray";
         ctx.fillRect(cx - btnW / 2, cy - 60, btnW, btnH);
         ctx.fillStyle = "white";
         ctx.font = "24px Arial";
         ctx.fillText("CONTROLS", cx, cy - 32);
-
         ctx.fillStyle = "orange";
         ctx.fillRect(cx - btnW / 2, cy, btnW, btnH);
         ctx.fillStyle = "white";
         ctx.fillText("RESTART", cx, cy + 28);
-
         ctx.fillStyle = "red";
         ctx.fillRect(cx - btnW / 2, cy + 60, btnW, btnH);
         ctx.fillStyle = "white";
@@ -1064,8 +1115,9 @@ function render() {
         ctx.fillText("CONTROLS", canvas.width / 2, canvas.height / 2 - 100);
         ctx.font = "24px Arial";
         ctx.fillText("WASD / Arrows : Move", canvas.width / 2, canvas.height / 2 - 40);
-        ctx.fillText("Space : Shoot", canvas.width / 2, canvas.height / 2);
-        ctx.fillText("Esc : Pause", canvas.width / 2, canvas.height / 2 + 40);
+        ctx.fillText("SHIFT : Dash", canvas.width / 2, canvas.height / 2 - 10);
+        ctx.fillText("Space : Shoot", canvas.width / 2, canvas.height / 2 + 20);
+        ctx.fillText("Esc : Pause", canvas.width / 2, canvas.height / 2 + 50);
         ctx.fillStyle = "gray";
         ctx.fillRect(canvas.width / 2 - 100, canvas.height / 2 + 100, 200, 40);
         ctx.fillStyle = "white";
@@ -1100,7 +1152,6 @@ tileset.onload =
 
 tileset.src = "assets/map0.png";
 playerImg.src = "assets/space3.png";
-// trapImg.src = "assets/monster5.gif";
 heartImg.src = "assets/heart.png";
 enemy1Img.src = "assets/monster2.png";
 enemy2Img.src = "assets/monster5.png";
